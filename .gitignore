@@ -1,0 +1,32 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Logs
+*.log
+celerybeat-schedule
+
+# Local Data
+qdrant_data/
+*.sqlite3
+
+# Frontend
+ai-companion-frontend/node_modules/
+ai-companion-frontend/dist/
+ai-companion-frontend/.env
+
+# IDEs / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.~lock.*

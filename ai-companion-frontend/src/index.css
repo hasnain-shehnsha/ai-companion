@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+:root {
+  /* Warm Premium Palette */
+  --bg-obsidian: #0f0e0e;
+  --bg-surface: #1a1818;
+  --bg-glass: rgba(35, 30, 28, 0.6);
+  --text-primary: #f5f2f0;
+  --text-muted: #a39c98;
+
+  /* Unique Warm Accents */
+  --accent-terracotta: #c96245;
+  --accent-amber: #e6a147;
+  --accent-glow: rgba(201, 98, 69, 0.15);
+
+  /* Borders & UI */
+  --border-subtle: #2d2725;
+  --glass-border: rgba(245, 242, 240, 0.05);
+
+  --radius-lg: 1.25rem;
+  --radius-md: 0.75rem;
+  --radius-sm: 0.5rem;
+
+  font-family: "Inter", system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: var(--text-primary);
+  background-color: var(--bg-obsidian);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--bg-obsidian);
+  background-image:
+    radial-gradient(
+      circle at 15% 50%,
+      rgba(201, 98, 69, 0.05),
+      transparent 25%
+    ),
+    radial-gradient(
+      circle at 85% 30%,
+      rgba(230, 161, 71, 0.03),
+      transparent 25%
+    );
+}
+
+#root {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* Typography Utilities */
+.heading-premium {
+  font-size: 2.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.heading-premium span {
+  background: linear-gradient(
+    135deg,
+    var(--accent-terracotta),
+    var(--accent-amber)
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* Animations */
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-enter {
+  animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Markdown Prose Styles */
+.markdown-prose p {
+  margin-bottom: 0.75rem;
+}
+.markdown-prose p:last-child {
+  margin-bottom: 0;
+}
+.markdown-prose strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.markdown-prose em {
+  font-style: italic;
+  color: var(--text-muted);
+}
+.markdown-prose ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.75rem;
+  margin-top: 0.5rem;
+}
+.markdown-prose ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-bottom: 0.75rem;
+  margin-top: 0.5rem;
+}
+.markdown-prose li {
+  margin-bottom: 0.25rem;
+}
+.markdown-prose h1,
+.markdown-prose h2,
+.markdown-prose h3 {
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
