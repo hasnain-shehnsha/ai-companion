@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey, DateTime
+from sqlalchemy import Column, String, ForeignKey, DateTime, Boolean
 from sqlalchemy.sql import func
 from app.core.database import Base
 import uuid
@@ -33,4 +33,7 @@ class Message(Base):
     )
     role = Column(String, nullable=False)  # 'user' or 'assistant'
     content = Column(String, nullable=False)
+    is_summarized = Column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())

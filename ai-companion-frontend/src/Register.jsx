@@ -21,8 +21,9 @@ export default function Register({ onLogin }) {
     setLoading(true);
     setError("");
     try {
-      const response = await api.post("/users/", formData);
-      onLogin(response.data.id);
+      await api.post("/users/", formData);
+      const loginResponse = await api.post("/users/login", { email: formData.email, password: formData.password });
+      onLogin(loginResponse.data.access_token);
       navigate("/chat");
     } catch (err) {
       setError(err.response?.data?.detail || "Registration failed");

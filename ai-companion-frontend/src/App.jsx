@@ -3,25 +3,24 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
-  Navigate,
 } from "react-router-dom";
 import Register from "./Register";
 import Login from "./Login";
 import Chat from "./Chat";
 
 function App() {
-  const [userId, setUserId] = useState(
-    localStorage.getItem("companion_user_id"),
+  const [token, setToken] = useState(
+    localStorage.getItem("companion_token"),
   );
 
-  const handleLogin = (id) => {
-    localStorage.setItem("companion_user_id", id);
-    setUserId(id);
+  const handleLogin = (jwtToken) => {
+    localStorage.setItem("companion_token", jwtToken);
+    setToken(jwtToken);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("companion_user_id");
-    setUserId(null);
+    localStorage.removeItem("companion_token");
+    setToken(null);
   };
 
   return (
@@ -31,11 +30,11 @@ function App() {
         <Route path="/login" element={<Login onLogin={handleLogin} />} />
         <Route
           path="/chat"
-          element={<Chat userId={userId} onLogout={handleLogout} />}
+          element={<Chat token={token} onLogout={handleLogout} />}
         />
         <Route
           path="/"
-          element={<Chat userId={userId} onLogout={handleLogout} />}
+          element={<Chat token={token} onLogout={handleLogout} />}
         />
       </Routes>
     </Router>

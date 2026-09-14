@@ -18,7 +18,7 @@ export default function Login({ onLogin }) {
     setError("");
     try {
       const response = await api.post("/users/login", formData);
-      onLogin(response.data.id);
+      onLogin(response.data.access_token);
       navigate("/chat");
     } catch (err) {
       setError(err.response?.data?.detail || "Login failed");

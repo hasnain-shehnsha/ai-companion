@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, String, Enum, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, String, Enum, DateTime, ForeignKey, Integer
 from sqlalchemy.sql import func
 from app.core.database import Base
 import uuid
@@ -22,6 +22,13 @@ class Reminder(Base):
     status = Column(
         Enum(ReminderStatus), default=ReminderStatus.PENDING, nullable=False
     )
+    email_status = Column(String, nullable=True)
+    whatsapp_status = Column(String, nullable=True)
+
+    last_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    attempt_count = Column(Integer, default=0, server_default="0", nullable=False)
+    failure_reason = Column(String, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

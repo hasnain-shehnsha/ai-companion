@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.models.user import User
 from app.schemas.user import UserCreate
+import phonenumbers
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -9,9 +10,21 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 async def create_user(db: AsyncSession, user_in: UserCreate) -> User:
 
+    try:
+        # Parse number (defaulting to PK region if no country code provided)
+        parsed_number = phonenumbers.parse(user_in.whatsapp_number, "PK")
+        if not phonenumbers.is_valid_number(parsed_number):
+            raise ValueError("Invalid WhatsApp number format")
+        normalized_number = phonenumbers.format_number(
+            parsed_number, phonenumbers.PhoneNumberFormat.E164
+        )
+    except phonenumbers.NumberParseException:
+        raise ValueError("Could not parse WhatsApp number")
+
     hashed_password = pwd_context.hash(user_in.password)
 
     user_data = user_in.model_dump(exclude={"password"})
+    user_data["whatsapp_number"] = normalized_number
     user_data["hashed_password"] = hashed_password
 
     db_user = User(**user_data)

@@ -10,6 +10,14 @@ class UserTier(str, enum.Enum):
     PAID = "PAID"
 
 
+class OnboardingState(str, enum.Enum):
+    WELCOME = "WELCOME"
+    LOCATION = "LOCATION"
+    OCCUPATION = "OCCUPATION"
+    INTERESTS = "INTERESTS"
+    COMPLETE = "COMPLETE"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -20,8 +28,11 @@ class User(Base):
     whatsapp_number = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     tier = Column(Enum(UserTier), default=UserTier.FREE, nullable=False)
-    chat_summary = Column(String, default="", nullable=False)
+    timezone = Column(String, default="UTC", nullable=False)
     is_onboarding_completed = Column(Boolean, default=False, nullable=False)
+    onboarding_state = Column(
+        Enum(OnboardingState), default=OnboardingState.WELCOME, nullable=False
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

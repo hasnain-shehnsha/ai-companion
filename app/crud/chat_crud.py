@@ -1,7 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, delete
 from app.models.chat import Message, ChatSession
+from app.models.reminder import Reminder
+from app.models.subscription import DailySubscription
 
 
 async def get_user_sessions(db: AsyncSession, user_id: str):
@@ -84,3 +86,46 @@ async def save_chat_turn(
     await db.commit()
 
     return db_user_msg, db_ai_msg
+
+
+async def delete_chat_session(db: AsyncSession, session_id: str, user_id: str) -> bool:
+    """Delete a chat session and all its messages (via cascade)."""
+    session = await get_session(db, session_id, user_id)
+    if not session:
+        return False
+    await db.delete(session)
+    await db.commit()
+    return True
+
+
+async def delete_chat_message(db: AsyncSession, message_id: str, user_id: str) -> bool:
+    """Delete a specific message from a session."""
+    result = await db.execute(
+        select(Message).filter(Message.id == message_id, Message.user_id == user_id)
+    )
+    message = result.scalar_one_or_none()
+    if not message:
+        return False
+    await db.delete(message)
+    await db.commit()
+    return True
+
+
+async def reset_user_chat_data(db: AsyncSession, user_id: str) -> bool:
+    """Delete all chat sessions, messages, reminders, and subscriptions for a user."""
+    # Delete all messages (including those without sessions like WhatsApp)
+    await db.execute(delete(Message).where(Message.user_id == user_id))
+
+    # Delete all sessions
+    await db.execute(delete(ChatSession).where(ChatSession.user_id == user_id))
+
+    # Delete all reminders
+    await db.execute(delete(Reminder).where(Reminder.user_id == user_id))
+
+    # Delete all daily subscriptions
+    await db.execute(
+        delete(DailySubscription).where(DailySubscription.user_id == user_id)
+    )
+
+    await db.commit()
+    return True

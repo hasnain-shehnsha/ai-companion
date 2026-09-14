@@ -1,19 +1,25 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Literal
 from datetime import datetime
 
 
+class ChatHistoryItem(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=2000, strip_whitespace=True)
+
+
 class ChatRequest(BaseModel):
-    user_id: Optional[str] = None
     session_id: Optional[str] = None
-    message: str
-    chat_history: Optional[list[dict]] = None
+    message: str = Field(..., min_length=1, max_length=2000, strip_whitespace=True)
+    chat_history: Optional[list[ChatHistoryItem]] = Field(None, max_length=20)
 
 
 class ChatResponse(BaseModel):
     response: str
     extracted_facts: Optional[list[str]] = None
     memory_error: Optional[str] = None
+    user_message_id: Optional[str] = None
+    ai_message_id: Optional[str] = None
 
 
 class MessageResponse(BaseModel):
@@ -30,4 +36,3 @@ class ChatSessionResponse(BaseModel):
 
 class UserStateResponse(BaseModel):
     is_onboarding_completed: bool
-    messages: list[MessageResponse]
