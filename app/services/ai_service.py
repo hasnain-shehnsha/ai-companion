@@ -144,6 +144,18 @@ async def handle_chat(
                 "memory_error": None,
             }
 
+    history = []
+    if user:
+        history = await get_user_messages(db, user.id, session_id)
+        
+    recent_context = ""
+    if history:
+        recent_msgs = history[-3:]
+        recent_context = "\n".join([f"{msg.role.capitalize()}: {msg.content}" for msg in recent_msgs])
+    elif chat_history:
+        recent_msgs = chat_history[-3:]
+        recent_context = "\n".join([f"{msg.get('role', 'User').capitalize()}: {msg.get('content', '')}" for msg in recent_msgs])
+
     # Fast path for common greetings and chit-chat to avoid unnecessary LLM latency
     cleaned_msg = user_message.strip().lower().rstrip("!.,?")
     COMMON_GREETINGS = {
@@ -178,7 +190,7 @@ async def handle_chat(
         )
     else:
         intent_data = await analyze_intent(
-            user_message, user.timezone if user else "UTC"
+            user_message, user.timezone if user else "UTC", recent_context
         )
     if (
         intent_data.intent == "SET_REMINDER"
@@ -309,7 +321,6 @@ async def handle_chat(
         }
 
     else:
-        history = await get_user_messages(db, user.id, session_id)
 
         if not user.is_onboarding_completed:
             if user.onboarding_state == OnboardingState.WELCOME:

@@ -22,7 +22,7 @@ class IntentResponse(BaseModel):
 
 
 async def analyze_intent(
-    user_message: str, user_timezone: str = "UTC"
+    user_message: str, user_timezone: str = "UTC", recent_context: str = ""
 ) -> IntentResponse:
     """
     Analyzes the user's message to determine if they want to chat or set a reminder.
@@ -58,6 +58,9 @@ Respond ONLY with a raw JSON object in this format (no markdown blocks, no other
     "is_general_question": true | false,
     "search_query": "concise english query" | null
 }}
+
+Recent conversation context (to help understand pronouns like 'it'):
+{recent_context if recent_context else "None"}
 
 User message: {user_message}"""
 

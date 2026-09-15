@@ -20,7 +20,7 @@ from app.core.config import settings
 from app.models.user import User, UserTier
 from app.models.webhook_event import WebhookEvent
 from app.services.ai_service import handle_chat
-from app.services.whatsapp_service import send_whatsapp_message
+from app.services.whatsapp_service import send_whatsapp_message, mark_whatsapp_message_read
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -97,6 +97,9 @@ async def handle_whatsapp_message(
                             wa_id = message.get("from")  # Sender's WhatsApp number
                             text = message.get("text", {}).get("body")
 
+                            # Mark the message as read to turn ticks blue
+                            background_tasks.add_task(mark_whatsapp_message_read, msg_id)
+                            
                             # Process in the background to avoid Meta webhook timeouts (and retries)
                             background_tasks.add_task(process_message, wa_id, text)
 
