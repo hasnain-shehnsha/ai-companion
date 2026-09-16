@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 import phonenumbers
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.models.user import UserTier
 
 
@@ -10,6 +11,16 @@ class UserBase(BaseModel):
     email: EmailStr
     whatsapp_number: str = Field(..., min_length=10, max_length=20)
     tier: UserTier = UserTier.FREE
+    timezone: str = Field(default="UTC", description="IANA timezone string")
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+            return v
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Invalid timezone: {v}")
 
     @field_validator("whatsapp_number")
     @classmethod
@@ -27,6 +38,22 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=128)
+
+
+class UserUpdate(BaseModel):
+    first_name: str | None = Field(None, min_length=2, max_length=50, strip_whitespace=True)
+    last_name: str | None = Field(None, min_length=2, max_length=50, strip_whitespace=True)
+    timezone: str | None = Field(None, description="IANA timezone string")
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str | None) -> str | None:
+        if v is not None:
+            try:
+                ZoneInfo(v)
+            except ZoneInfoNotFoundError:
+                raise ValueError(f"Invalid timezone: {v}")
+        return v
 
 
 class UserLogin(BaseModel):

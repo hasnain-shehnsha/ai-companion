@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select, func
 
-from app.schemas.user import UserCreate, UserResponse, UserLogin, UserLoginResponse
+from app.schemas.user import UserCreate, UserResponse, UserLogin, UserLoginResponse, UserUpdate
 from app.services.user_service import create_user, authenticate_user
 from app.core.database import get_db
 from app.core.security import create_access_token
@@ -60,6 +60,22 @@ async def login_user(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_users_me(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    update_data = user_update.model_dump(exclude_unset=True)
+    if update_data:
+        for key, value in update_data.items():
+            setattr(current_user, key, value)
+        await db.commit()
+        await db.refresh(current_user)
+    return current_user
+
 
 
 @router.get("/me/usage")
