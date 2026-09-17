@@ -1,17 +1,18 @@
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
-import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas.token import TokenPayload
 from app.services.user_service import get_user
-from app.models.user import User
 
-reusable_oauth2 = OAuth2PasswordBearer(tokenUrl=f"/users/login")
+reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/users/login")
 optional_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"/users/login",
+    tokenUrl="/users/login",
     auto_error=False,
 )
 

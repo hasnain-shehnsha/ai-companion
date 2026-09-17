@@ -1,7 +1,9 @@
-from sqlalchemy import Column, String, ForeignKey, DateTime, Boolean
-from sqlalchemy.sql import func
-from app.core.database import Base
 import uuid
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String
+from sqlalchemy.sql import func
+
+from app.core.database import Base
 
 
 class ChatSession(Base):

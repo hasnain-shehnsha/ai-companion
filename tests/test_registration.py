@@ -1,7 +1,3 @@
-import pytest
-from app.models.user import User
-
-
 async def test_successful_registration(async_client):
     response = await async_client.post(
         "/users/",
@@ -46,6 +42,38 @@ async def test_duplicate_email(async_client):
     )
     assert response.status_code == 409
     assert "already exists" in response.json()["detail"]
+
+
+async def test_email_normalization_and_case_insensitive_uniqueness(
+    async_client, db_session
+):
+    # First registration with Mixed Case and spaces
+    response1 = await async_client.post(
+        "/users/",
+        json={
+            "email": "  MiXeD@ExAmPlE.CoM  ",
+            "password": "strongpassword123",
+            "first_name": "Mixed",
+            "last_name": "Case",
+            "whatsapp_number": "+923001234999",
+        },
+    )
+    assert response1.status_code == 201
+    assert response1.json()["email"] == "mixed@example.com"
+
+    # Second registration with lowercase variant should trigger 409 Conflict
+    response2 = await async_client.post(
+        "/users/",
+        json={
+            "email": "mixed@example.com",
+            "password": "anotherpassword",
+            "first_name": "Mixed",
+            "last_name": "Case",
+            "whatsapp_number": "+923001234998",
+        },
+    )
+    assert response2.status_code == 409
+    assert "already exists" in response2.json()["detail"]
 
 
 async def test_duplicate_whatsapp_number(async_client):

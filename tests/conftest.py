@@ -1,15 +1,25 @@
 import os
+
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.pool import NullPool
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool, StaticPool
 
 os.environ["ENVIRONMENT"] = "test"
+# Ensure we don't accidentally wipe the production database!
+if "TEST_DATABASE_URL" in os.environ:
+    os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
+else:
+    # Use SQLite by default for tests to avoid hitting the prod remote DB
+    # Using shared cache so :memory: persists across connections
+    os.environ["DATABASE_URL"] = (
+        "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared&uri=true"
+    )
 
 from app.core.config import settings
+from app.core.database import Base, get_db
 from main import app
-from app.core.database import get_db, Base
 
 
 @pytest_asyncio.fixture
@@ -19,7 +29,14 @@ async def db_session():
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-    engine = create_async_engine(db_url, echo=False, poolclass=NullPool)
+    is_sqlite = db_url.startswith("sqlite")
+    pool_class = StaticPool if is_sqlite else NullPool
+    engine = create_async_engine(
+        db_url,
+        echo=False,
+        poolclass=pool_class,
+        **({"connect_args": {"check_same_thread": False}} if is_sqlite else {}),
+    )
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -38,6 +55,8 @@ async def db_session():
         await session.close()
         await trans.rollback()
         await connection.close()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
 
 
@@ -77,7 +96,13 @@ def mock_external_services(mocker):
         "app.api.endpoints.chat.generate_session_title",
         return_value="Test Conversation",
     )
-    mocker.patch("app.services.intent_service.client.chat.completions.create")
+    mocker.patch(
+        "app.services.llm_gateway.generate_llm_response",
+        return_value=(
+            '{"intent": "CHAT", "datetime_iso": null, "reminder_text": null, "is_general_question": false, "search_query": null}',
+            None,
+        ),
+    )
 
     # Mock Celery Tasks
     mocker.patch("app.tasks.reminder_tasks.send_reminder_email.apply_async")
@@ -86,3 +111,10 @@ def mock_external_services(mocker):
     mocker.patch(
         "app.services.whatsapp_service.send_whatsapp_message", return_value=True
     )
+
+
+@pytest.fixture(autouse=True)
+def disable_rate_limits(mocker):
+    """Disable slowapi rate limits during testing."""
+    # Patch the global limiter instance in main
+    mocker.patch("main.limiter.enabled", False)

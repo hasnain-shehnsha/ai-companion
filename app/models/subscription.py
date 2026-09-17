@@ -1,6 +1,8 @@
-from sqlalchemy import Column, String, Boolean, Time, Date, ForeignKey
-from app.core.database import Base
 import uuid
+
+from sqlalchemy import Boolean, Column, Date, ForeignKey, String, Time
+
+from app.core.database import Base
 
 
 class DailySubscription(Base):
@@ -11,4 +13,4 @@ class DailySubscription(Base):
     topic = Column(String, nullable=False)
     time_of_day = Column(Time(timezone=True), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    last_sent_date = Column(Date, nullable=True)
+    last_successful_delivery_date = Column(Date, nullable=True)

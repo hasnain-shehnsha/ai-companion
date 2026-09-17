@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "./api";
-import { Send, LogOut, Loader2, Plus, MessageSquare, Menu, Trash2, Brain } from "lucide-react";
+import { Send, LogOut, Loader2, Plus, MessageSquare, Menu, Trash2, Brain, Settings as SettingsIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -36,11 +36,17 @@ export default function Chat({ token, onLogout }) {
   useEffect(() => {
     if (token) {
       fetchUsage();
-      api.get('/users/me').then(res => setUserProfile(res.data)).catch(err => console.error(err));
+      api.get('/users/me').then(res => {
+        if (!res.data.email_verified || !res.data.whatsapp_verified) {
+          navigate('/onboarding');
+          return;
+        }
+        setUserProfile(res.data);
+      }).catch(err => console.error(err));
     } else {
       setUserProfile(null);
     }
-  }, [token]);
+  }, [token, navigate]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -353,13 +359,22 @@ export default function Chat({ token, onLogout }) {
             )}
           </div>
           {token && (
-            <button
-              onClick={handleResetData}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-red-400 border border-red-500/20 hover:bg-red-500/10 transition-colors"
-            >
-              <Brain className="w-3.5 h-3.5" />
-              Reset AI Brain
-            </button>
+            <div className="flex flex-col gap-2 w-full">
+              <button
+                onClick={() => navigate("/settings")}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-[var(--text-primary)] border border-[var(--border-subtle)] hover:bg-[var(--bg-surface)] transition-colors"
+              >
+                <SettingsIcon className="w-3.5 h-3.5" />
+                Settings
+              </button>
+              <button
+                onClick={handleResetData}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-red-400 border border-red-500/20 hover:bg-red-500/10 transition-colors"
+              >
+                <Brain className="w-3.5 h-3.5" />
+                Reset AI Brain
+              </button>
+            </div>
           )}
         </div>
       </aside>

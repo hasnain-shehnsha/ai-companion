@@ -1,17 +1,19 @@
+import asyncio
+import logging
+import uuid
+
+from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
-    VectorParams,
-    PointStruct,
-    Filter,
     FieldCondition,
+    Filter,
     MatchValue,
+    PointStruct,
     QueryRequest,
+    VectorParams,
 )
-from fastembed import TextEmbedding
-import uuid
-import logging
-import asyncio
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -29,14 +31,21 @@ def setup_memory_service():
     if client is not None:
         return
 
-    if settings.QDRANT_URL:
-        client = QdrantClient(
-            url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY, timeout=30.0
+    try:
+        if settings.QDRANT_URL:
+            client = QdrantClient(
+                url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY, timeout=30.0
+            )
+            logger.info("Initialized QdrantClient with Cloud/URL (timeout=30.0s).")
+        else:
+            client = QdrantClient(path="qdrant_data")
+            logger.info("Initialized QdrantClient with local path.")
+    except Exception:
+        logger.exception(
+            "Failed to connect to Qdrant. Memory functionality will be disabled (degraded mode)."
         )
-        logger.info("Initialized QdrantClient with Cloud/URL (timeout=30.0s).")
-    else:
-        client = QdrantClient(path="qdrant_data")
-        logger.info("Initialized QdrantClient with local path.")
+        client = None
+        return
 
     embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
@@ -55,24 +64,32 @@ def setup_memory_service():
             )
             client.create_payload_index(
                 collection_name=COLLECTION_NAME,
-                field_name="message_id",
+                field_name="source_message_ids",
                 field_schema="keyword",
             )
             client.create_payload_index(
                 collection_name=COLLECTION_NAME,
-                field_name="session_id",
+                field_name="source_session_id",
                 field_schema="keyword",
             )
-    except Exception as e:
+    except Exception:
         logger.exception("Error checking/creating Qdrant collection or indices")
 
 
 async def store_facts(
-    user_id: str, facts: list[str], message_id: str = None, session_id: str = None
+    user_id: str,
+    facts: list[str],
+    source_message_ids: list[str] = None,
+    source_session_id: str = None,
+    memory_type: str = "explicit",
 ):
     """Embed and store a list of facts for a given user off the main event loop."""
-    if not facts:
+    if not facts or client is None:
         return
+
+    import datetime
+
+    now_iso = datetime.datetime.now(datetime.UTC).isoformat()
 
     def _sync_store():
         embeddings = list(embedding_model.embed(facts))
@@ -95,7 +112,7 @@ async def store_facts(
             batch_results = client.query_batch_points(
                 collection_name=COLLECTION_NAME, requests=search_requests
             )
-        except Exception as e:
+        except Exception:
             logger.exception(
                 "Failed to search batch for deduplication", extra={"user_id": user_id}
             )
@@ -116,11 +133,16 @@ async def store_facts(
             if is_duplicate:
                 continue
 
-            payload = {"user_id": user_id, "document": fact}
-            if message_id:
-                payload["message_id"] = message_id
-            if session_id:
-                payload["session_id"] = session_id
+            payload = {
+                "user_id": user_id,
+                "document": fact,
+                "memory_type": memory_type,
+                "created_at": now_iso,
+            }
+            if source_message_ids:
+                payload["source_message_ids"] = source_message_ids
+            if source_session_id:
+                payload["source_session_id"] = source_session_id
 
             points.append(
                 PointStruct(
@@ -138,12 +160,14 @@ async def store_facts(
 
 
 async def retrieve_relevant_facts(
-    user_id: str, query: str, limit: int = 5
+    user_id: str, query: str, limit: int = 15
 ) -> list[str]:
     """Retrieve facts related to the query for the specific user off the main event loop."""
+    if client is None:
+        return []
 
     def _sync_retrieve():
-        query_embedding = list(embedding_model.embed([query]))[0].tolist()
+        query_embedding = next(iter(embedding_model.embed([query]))).tolist()
         return client.query_points(
             collection_name=COLLECTION_NAME,
             query=query_embedding,
@@ -156,7 +180,7 @@ async def retrieve_relevant_facts(
     for attempt in range(2):
         try:
             results = await asyncio.to_thread(_sync_retrieve)
-            RETRIEVAL_THRESHOLD = 0.50
+            RETRIEVAL_THRESHOLD = 0.60
             facts = [
                 res.payload.get("document")
                 for res in results.points
@@ -165,9 +189,9 @@ async def retrieve_relevant_facts(
                 and getattr(res, "score", 0) >= RETRIEVAL_THRESHOLD
             ]
             return facts
-        except Exception as e:
+        except Exception:
             logger.exception(
-                f"Attempt {attempt+1} - Failed to retrieve facts from Qdrant",
+                f"Attempt {attempt + 1} - Failed to retrieve facts from Qdrant",
                 extra={"user_id": user_id, "query": query},
             )
             if attempt == 1:
@@ -176,6 +200,8 @@ async def retrieve_relevant_facts(
 
 async def delete_facts_by_message(user_id: str, message_id: str):
     """Delete all facts associated with a specific message off the main event loop."""
+    if client is None:
+        return
 
     def _sync_delete():
         client.delete(
@@ -184,7 +210,7 @@ async def delete_facts_by_message(user_id: str, message_id: str):
                 must=[
                     FieldCondition(key="user_id", match=MatchValue(value=user_id)),
                     FieldCondition(
-                        key="message_id", match=MatchValue(value=message_id)
+                        key="source_message_ids", match=MatchValue(value=message_id)
                     ),
                 ]
             ),
@@ -198,10 +224,13 @@ async def delete_facts_by_message(user_id: str, message_id: str):
             "Failed to delete facts for message from Qdrant",
             extra={"user_id": user_id, "message_id": message_id},
         )
+        raise e
 
 
 async def delete_facts_by_session(user_id: str, session_id: str):
     """Delete all facts associated with a specific session off the main event loop."""
+    if client is None:
+        return
 
     def _sync_delete():
         client.delete(
@@ -210,7 +239,7 @@ async def delete_facts_by_session(user_id: str, session_id: str):
                 must=[
                     FieldCondition(key="user_id", match=MatchValue(value=user_id)),
                     FieldCondition(
-                        key="session_id", match=MatchValue(value=session_id)
+                        key="source_session_id", match=MatchValue(value=session_id)
                     ),
                 ]
             ),
@@ -224,10 +253,13 @@ async def delete_facts_by_session(user_id: str, session_id: str):
             "Failed to delete facts for session from Qdrant",
             extra={"user_id": user_id, "session_id": session_id},
         )
+        raise e
 
 
 async def delete_all_facts_for_user(user_id: str):
     """Delete all facts associated with a user off the main event loop."""
+    if client is None:
+        return
 
     def _sync_delete():
         client.delete(
@@ -247,3 +279,4 @@ async def delete_all_facts_for_user(user_id: str):
             "Failed to delete all facts for user from Qdrant",
             extra={"user_id": user_id},
         )
+        raise e

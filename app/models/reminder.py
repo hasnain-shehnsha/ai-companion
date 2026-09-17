@@ -1,13 +1,17 @@
 import enum
-from sqlalchemy import Column, String, Enum, DateTime, ForeignKey, Integer
-from sqlalchemy.sql import func
-from app.core.database import Base
 import uuid
+
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy.sql import func
+
+from app.core.database import Base
 
 
 class ReminderStatus(str, enum.Enum):
     PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
     SENT = "SENT"
+    PARTIALLY_SENT = "PARTIALLY_SENT"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 

@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = [
+    "E712", # SQLAlchemy needs `== False`
+    "F841", # Unused variables in tests are common for mocking
+    "E501", # Line too long (handled mostly by black, string lengths are fine)
+    "E402", # Module level import not at top of file
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"app/models/__init__.py" = ["F401"]

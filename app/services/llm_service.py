@@ -1,11 +1,9 @@
-import asyncio
-import uuid
 import logging
-from groq import AsyncGroq, GroqError
-from app.core.config import settings
-from app.core.database import AsyncSessionLocal
+
+from groq import AsyncGroq
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.usage import UsageRecord
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +18,9 @@ def _completion_content(chat_completion) -> tuple[str, str | None]:
     return content or "", getattr(choice, "finish_reason", None)
 
 
+from app.services.llm_gateway import generate_llm_response
+
+
 async def generate_chat_completion(
     messages: list[dict],
     max_tokens: int = 800,
@@ -29,146 +30,87 @@ async def generate_chat_completion(
     channel: str = "web",
 ) -> str:
     """Wrapper to generate a chat completion from the LLM with fallback and usage tracking."""
-    selected_model = MODEL
-    chat_completion = None
+    # To determine quota limit, we fetch the user (if user_id is provided and it's a chat request)
+    user_timezone = "UTC"
+    quota_limit = None
 
-    try:
-        chat_completion = await client.chat.completions.create(
-            messages=messages,
-            model=selected_model,
-            max_tokens=max_tokens,
+    if request_type == "chat" and user_id and db:
+        from sqlalchemy import select
+
+        from app.models.user import User
+        from app.services.auth_service import check_premium_entitlement
+
+        user = (
+            await db.execute(select(User).filter(User.id == user_id))
+        ).scalar_one_or_none()
+        if user:
+            user_timezone = getattr(user, "timezone", "UTC") or "UTC"
+            quota_limit = 500 if check_premium_entitlement(user) else 50
+
+    content, finish_reason = await generate_llm_response(
+        messages=messages,
+        user_id=user_id,
+        user_timezone=user_timezone,
+        quota_limit=quota_limit,
+        model=MODEL,
+        channel=channel,
+        request_type=request_type,
+        max_tokens=max_tokens,
+    )
+
+    if request_type == "chat" and content:
+        content_stripped = content.strip()
+        dangling_endings = (",", "...", "…", "-", "—", ":")
+        dangling_words = (
+            " and",
+            " or",
+            " but",
+            " because",
+            " with",
+            " the",
+            " that",
+            " which",
+            " to",
+            " of",
+            " in",
+            " is",
+            " are",
         )
-        content, finish_reason = _completion_content(chat_completion)
+        is_dangling = content_stripped.endswith(dangling_endings) or any(
+            content_stripped.lower().endswith(w) for w in dangling_words
+        )
 
-        # If response was truncated due to token limit or ended abruptly mid-clause
-        if request_type == "chat" and content:
-            content_stripped = content.strip()
-            dangling_endings = (",", "...", "…", "-", "—", ":")
-            dangling_words = (
-                " and",
-                " or",
-                " but",
-                " because",
-                " with",
-                " the",
-                " that",
-                " which",
-                " to",
-                " of",
-                " in",
-                " is",
-                " are",
-            )
-            is_dangling = content_stripped.endswith(dangling_endings) or any(
-                content_stripped.lower().endswith(w) for w in dangling_words
+        has_punctuation = content_stripped[-1] in ".!?\"'" if content_stripped else True
+        is_cut_off = is_dangling or not has_punctuation
+
+        if finish_reason == "length" or is_cut_off:
+            logger.warning(
+                "LLM response was truncated or ended abruptly; requesting continuation",
+                extra={"model": MODEL, "user_id": user_id},
             )
 
-            # Genuine truncation: hit token limit or ended abruptly mid-clause
-            if finish_reason == "length" or (finish_reason != "stop" and is_dangling):
-                logger.warning(
-                    "LLM response was truncated or ended abruptly; requesting continuation",
-                    extra={"model": selected_model, "user_id": user_id},
-                )
+            continuation_messages = messages.copy()
+            continuation_messages.append({"role": "assistant", "content": content})
+            continuation_messages.append(
+                {
+                    "role": "user",
+                    "content": "Please continue exactly where you left off. Do not repeat what you already said or acknowledge this instruction, just continue the sentence.",
+                }
+            )
 
-                continuation_messages = messages.copy()
-                continuation_messages.append({"role": "assistant", "content": content})
-                continuation_messages.append(
-                    {
-                        "role": "user",
-                        "content": "Please continue exactly where you left off. Do not repeat what you already said or acknowledge this instruction, just continue the sentence.",
-                    }
-                )
-
-                chat_completion_part2 = await client.chat.completions.create(
-                    messages=continuation_messages,
-                    model=selected_model,
-                    max_tokens=max_tokens,
-                )
-                content_part2, _ = _completion_content(chat_completion_part2)
-                if content_part2:
-                    content += " " + content_part2.strip()
-
-        if not content or not content.strip():
-            # If primary model returns empty, attempt fallback model
-            selected_model = FALLBACK_MODEL
-            chat_completion = await client.chat.completions.create(
-                messages=messages,
-                model=selected_model,
+            # Do not enforce quota limit for continuation calls
+            content_part2, _ = await generate_llm_response(
+                messages=continuation_messages,
+                user_id=user_id,
+                user_timezone=user_timezone,
+                quota_limit=None,
+                model=MODEL,
+                channel=channel,
+                request_type=request_type,
                 max_tokens=max_tokens,
             )
-            content, _ = _completion_content(chat_completion)
-    except GroqError as e:
-        logger.warning(
-            "Primary LLM model failed, attempting fallback",
-            extra={
-                "model": selected_model,
-                "user_id": user_id,
-                "error": str(e),
-                "status_code": getattr(e, "status_code", None),
-                "error_code": getattr(getattr(e, "body", None), "get", lambda _: None)(
-                    "code"
-                ),
-            },
-        )
-        try:
-            selected_model = FALLBACK_MODEL
-            chat_completion = await client.chat.completions.create(
-                messages=messages,
-                model=selected_model,
-                max_tokens=max_tokens,
-            )
-            content, _ = _completion_content(chat_completion)
-        except GroqError as fallback_err:
-            logger.error(
-                "Fallback LLM model also failed",
-                extra={
-                    "model": selected_model,
-                    "user_id": user_id,
-                    "error": str(fallback_err),
-                    "status_code": getattr(fallback_err, "status_code", None),
-                    "error_code": getattr(
-                        getattr(fallback_err, "body", None), "get", lambda _: None
-                    )("code"),
-                },
-            )
-            return ""
-    except Exception as e:
-        logger.exception(
-            "Unexpected error in generate_chat_completion", extra={"user_id": user_id}
-        )
-        return ""
-
-    if not content:
-        content = ""
-
-    if chat_completion:
-        usage = getattr(chat_completion, "usage", None)
-        input_tokens = usage.prompt_tokens if usage else 0
-        output_tokens = usage.completion_tokens if usage else 0
-        cost = (input_tokens + output_tokens) * 0.0000005
-
-        async def _log_usage():
-            try:
-                async with AsyncSessionLocal() as bg_db:
-                    record = UsageRecord(
-                        id=str(uuid.uuid4()),
-                        user_id=user_id,
-                        model=selected_model,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        request_type=request_type,
-                        channel=channel,
-                        estimated_cost=cost,
-                    )
-                    bg_db.add(record)
-                    await bg_db.commit()
-            except Exception as e:
-                logger.exception(
-                    "Failed to record LLM usage in background",
-                    extra={"user_id": user_id},
-                )
-
-        asyncio.create_task(_log_usage())
+            if content_part2:
+                content += " " + content_part2.strip()
 
     return content
 
@@ -180,7 +122,7 @@ async def extract_atomic_facts(
     channel: str = "web",
 ) -> list[str]:
     """Extracts a list of atomic facts from a bulk conversation history."""
-    prompt = f"Extract a concise list of atomic, distinct facts about the user from the following conversation. Focus on preferences, background, and specific details. Return each fact on a new line starting with a dash (-). If there are no facts to extract, return an empty string (do not output 'None' or 'N/A'). IMPORTANT: Always extract and write the facts in English, regardless of the language used in the conversation.\n\nConversation:\n{conversation}"
+    prompt = f"Extract a concise list of atomic, distinct facts about the user from the following conversation. Pay close attention to answers the user gives to the assistant's questions. If the assistant asks for a detail (e.g. 'Where do you live?') and the user gives a short answer (e.g. 'London'), combine them into a complete fact ('The user lives in London'). Focus on the user's personal information, preferences, and details. Do not extract facts that the assistant assumed unless the user explicitly confirmed them. Return each fact on a new line starting with a dash (-). If there are no facts to extract, return an empty string (do not output 'None' or 'N/A'). IMPORTANT: Always extract and write the facts in English, regardless of the language used in the conversation.\n\nConversation:\n{conversation}"
 
     response = await generate_chat_completion(
         [
@@ -209,7 +151,7 @@ async def extract_atomic_facts(
     ]
     for line in content.split("\n"):
         line = line.strip()
-        if line.startswith("-") or line.startswith("*"):
+        if line.startswith(("-", "*")):
             fact = line.lstrip("-*").strip()
             if fact and not any(junk in fact.lower() for junk in junk_phrases):
                 facts.append(fact)
@@ -224,7 +166,7 @@ async def extract_facts_from_single_message(
     channel: str = "web",
 ) -> list[str]:
     """Dynamically extracts new facts from a single user message in real-time."""
-    prompt = f"Does the user explicitly state or reveal any new personal information, preference, or fact in this message? Use the previous AI message for context if needed. If yes, extract it as a bullet point starting with a dash (-). Focus strictly on explicit statements made by the user. If there are no facts to extract, return an empty string (do not output 'None' or 'N/A'). IMPORTANT: Always extract and write the fact in English, regardless of the user's language.\n\nPrevious AI message: {previous_ai_message}\n\nUser Message: {message}"
+    prompt = f"Does the user explicitly state or reveal any new personal information, preference, or fact in this message? Pay close attention to short answers the user gives to the previous AI message. If the AI asks for a detail (e.g. 'Where did you buy it?') and the user gives a short answer (e.g. 'London'), combine them into a complete fact ('The user bought it in London'). DO NOT extract any facts that the AI stated about the user unless the user explicitly confirmed them. If yes, extract it as a bullet point starting with a dash (-). If there are no facts to extract, return an empty string (do not output 'None' or 'N/A'). IMPORTANT: Always extract and write the fact in English, regardless of the user's language.\n\nPrevious AI message: {previous_ai_message}\n\nUser Message: {message}"
 
     response = await generate_chat_completion(
         [
@@ -253,7 +195,7 @@ async def extract_facts_from_single_message(
     ]
     for line in content.split("\n"):
         line = line.strip()
-        if line.startswith("-") or line.startswith("*"):
+        if line.startswith(("-", "*")):
             fact = line.lstrip("-*").strip()
             if fact and not any(junk in fact.lower() for junk in junk_phrases):
                 facts.append(fact)

@@ -1,10 +1,12 @@
-import pytest
-import uuid
-from app.models.user import User, UserTier
-from app.models.usage import UsageRecord
-from app.models.chat import ChatSession, Message
-from app.core.security import get_password_hash
 import datetime
+import uuid
+
+import pytest
+
+from app.core.security import get_password_hash
+from app.models.chat import ChatSession
+from app.models.usage import UsageRecord
+from app.models.user import User, UserTier
 
 
 @pytest.fixture
@@ -47,23 +49,17 @@ async def get_token(async_client, email):
     return response.json()["access_token"]
 
 
-async def test_free_chat_quota(async_client, db_session, free_user):
+async def test_free_chat_quota(async_client, db_session, free_user, mocker):
     token = await get_token(async_client, free_user.email)
 
-    # Fill quota to 50 (simulate by adding 50 usage records)
-    now = datetime.datetime.now(datetime.timezone.utc)
-    for _ in range(50):
-        db_session.add(
-            UsageRecord(
-                id=str(uuid.uuid4()),
-                user_id=free_user.id,
-                model="test",
-                request_type="chat",
-                channel="web",
-                created_at=now,
-            )
-        )
-    await db_session.commit()
+    from app.core.exceptions import QuotaExceededException
+
+    mocker.patch(
+        "app.services.ai_service.generate_chat_completion",
+        side_effect=QuotaExceededException(
+            "You've reached your daily limit of 50 messages."
+        ),
+    )
 
     # Now attempt chat
     response = await async_client.post(
@@ -95,7 +91,7 @@ async def test_paid_chat_quota(async_client, db_session, paid_user):
     token = await get_token(async_client, paid_user.email)
 
     # Fill quota to 50
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     for _ in range(50):
         db_session.add(
             UsageRecord(

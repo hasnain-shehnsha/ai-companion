@@ -1,24 +1,25 @@
 import json
-from app.services.llm_service import client, MODEL
-from datetime import datetime
-
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from app.services.llm_service import MODEL
 
 logger = logging.getLogger(__name__)
 
-from typing import Literal, Optional
+from typing import Literal
+
 from pydantic import BaseModel, Field, ValidationError
 
 
 class IntentResponse(BaseModel):
     intent: Literal["SET_REMINDER", "SCHEDULE_DAILY_WHATSAPP", "CHAT"]
-    datetime_iso: Optional[datetime] = None
-    reminder_text: Optional[str] = Field(
+    datetime_iso: datetime | None = None
+    reminder_text: str | None = Field(
         None, min_length=1, max_length=500, strip_whitespace=True
     )
     is_general_question: bool = False
-    search_query: Optional[str] = None
+    search_query: str | None = None
 
 
 async def analyze_intent(
@@ -65,15 +66,20 @@ Recent conversation context (to help understand pronouns like 'it'):
 User message: {user_message}"""
 
     try:
-        response = await client.chat.completions.create(
+        from app.services.llm_gateway import generate_llm_response
+
+        content, _ = await generate_llm_response(
             messages=[{"role": "user", "content": prompt}],
+            user_id=None,
             model=MODEL,
+            channel="background",
+            request_type="intent",
             max_tokens=200,
             temperature=0.0,
             response_format={"type": "json_object"},
         )
 
-        content = (response.choices[0].message.content or "").strip()
+        content = (content or "").strip()
 
         raw_dict = json.loads(content)
         intent_response = IntentResponse(**raw_dict)
@@ -113,6 +119,6 @@ User message: {user_message}"""
             "Intent response validation failed", exc_info=True, extra={"error": str(e)}
         )
         return IntentResponse(intent="CHAT")
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in analyze_intent")
-        return IntentResponse(intent="CHAT")
+        raise

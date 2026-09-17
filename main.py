@@ -1,13 +1,14 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.endpoints import users, chat, whatsapp
-from app.core.config import settings
-from app.core.limiter import limiter
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from contextlib import asynccontextmanager
+from app.api.endpoints import chat, health, users, whatsapp
+from app.core.config import settings
+from app.core.limiter import limiter
 from app.services.memory_service import setup_memory_service
 
 
@@ -40,6 +41,7 @@ app.add_middleware(
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 app.include_router(whatsapp.router, prefix="/whatsapp", tags=["WhatsApp"])
+app.include_router(health.router, prefix="/health", tags=["Health"])
 
 
 @app.get("/")

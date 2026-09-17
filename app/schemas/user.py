@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
-import phonenumbers
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import phonenumbers
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
 from app.models.user import UserTier
 
 
@@ -12,6 +14,13 @@ class UserBase(BaseModel):
     whatsapp_number: str = Field(..., min_length=10, max_length=20)
     tier: UserTier = UserTier.FREE
     timezone: str = Field(default="UTC", description="IANA timezone string")
+    email_verified: bool = False
+    whatsapp_verified: bool = False
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
 
     @field_validator("timezone")
     @classmethod
@@ -25,6 +34,10 @@ class UserBase(BaseModel):
     @field_validator("whatsapp_number")
     @classmethod
     def validate_phone(cls, v: str) -> str:
+        v = v.strip()
+        if v and not v.startswith("+") and v.isdigit():
+            v = "+" + v
+
         try:
             parsed = phonenumbers.parse(v)
             if not phonenumbers.is_valid_number(parsed):
@@ -41,9 +54,14 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    first_name: str | None = Field(None, min_length=2, max_length=50, strip_whitespace=True)
-    last_name: str | None = Field(None, min_length=2, max_length=50, strip_whitespace=True)
+    first_name: str | None = Field(
+        None, min_length=2, max_length=50, strip_whitespace=True
+    )
+    last_name: str | None = Field(
+        None, min_length=2, max_length=50, strip_whitespace=True
+    )
     timezone: str | None = Field(None, description="IANA timezone string")
+    whatsapp_number: str | None = Field(None, min_length=10, max_length=20)
 
     @field_validator("timezone")
     @classmethod
@@ -55,10 +73,43 @@ class UserUpdate(BaseModel):
                 raise ValueError(f"Invalid timezone: {v}")
         return v
 
+    @field_validator("whatsapp_number")
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if v and not v.startswith("+") and v.isdigit():
+            v = "+" + v
+
+        try:
+            parsed = phonenumbers.parse(v)
+            if not phonenumbers.is_valid_number(parsed):
+                raise ValueError("Invalid phone number format")
+            return phonenumbers.format_number(
+                parsed, phonenumbers.PhoneNumberFormat.E164
+            )
+        except phonenumbers.phonenumberutil.NumberParseException:
+            raise ValueError("Invalid phone number format")
+
+
+class VerificationSendRequest(BaseModel):
+    channel: str  # 'EMAIL' or 'WHATSAPP'
+
+
+class VerificationVerifyRequest(BaseModel):
+    channel: str
+    code: str
+
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
 
 
 class UserResponse(UserBase):

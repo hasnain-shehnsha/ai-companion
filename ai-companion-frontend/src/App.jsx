@@ -7,6 +7,8 @@ import {
 import Register from "./Register";
 import Login from "./Login";
 import Chat from "./Chat";
+import Settings from "./Settings";
+import Onboarding from "./Onboarding";
 
 function App() {
   const [token, setToken] = useState(
@@ -28,9 +30,14 @@ function App() {
       <Routes>
         <Route path="/register" element={<Register onLogin={handleLogin} />} />
         <Route path="/login" element={<Login onLogin={handleLogin} />} />
+        <Route path="/onboarding" element={<Onboarding />} />
         <Route
           path="/chat"
           element={<Chat token={token} onLogout={handleLogout} />}
+        />
+        <Route
+          path="/settings"
+          element={<Settings />}
         />
         <Route
           path="/"

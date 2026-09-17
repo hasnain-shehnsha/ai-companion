@@ -1,6 +1,7 @@
+from limits.storage import RedisStorage
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from limits.storage import RedisStorage
+
 from app.core.config import settings
 
 # Determine the correct redis URL scheme (limits doesn't support redis+asyncio or redis:// for strict sync operations by default, but it supports standard redis://)

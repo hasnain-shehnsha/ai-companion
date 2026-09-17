@@ -1,5 +1,6 @@
-from sqlalchemy import Column, String, Integer, Float, ForeignKey, DateTime
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.sql import func
+
 from app.core.database import Base
 
 
@@ -18,4 +19,6 @@ class UsageRecord(Base):
     )  # e.g., "chat", "fact_extraction", "title_generation", "scheduler"
     channel = Column(String, nullable=False)  # e.g., "web", "whatsapp", "background"
     estimated_cost = Column(Float, default=0.0)
+    latency_ms = Column(Float, nullable=True)
+    error_state = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

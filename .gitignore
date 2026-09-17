@@ -1,5 +1,7 @@
 # Environments
 .env
+.env.*
+!.env.*.example
 .venv
 env/
 venv/
@@ -11,23 +13,36 @@ __pycache__/
 *$py.class
 *.so
 .pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
 
-# Logs
-*.log
+# Celery
 celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
+*.log
 
-# Local Data
+# Local Data / Databases
 qdrant_data/
+*.sqlite
 *.sqlite3
+*.db
 
-# Frontend
+# Secrets & Keys
+*.pem
+*.key
+.netrc
+
+# Frontend (handled mostly by inner .gitignore, but ensuring safety here too)
 ai-companion-frontend/node_modules/
 ai-companion-frontend/dist/
-ai-companion-frontend/.env
 
 # IDEs / OS
 .idea/
 .vscode/
 *.swp
 .DS_Store
+Thumbs.db
 .~lock.*

@@ -12,4 +12,9 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export const getUserProfile = () => api.get("/users/me");
+export const updateUserProfile = (data) => api.patch("/users/me", data);
+export const sendVerificationCode = (channel) => api.post("/users/me/verify/send", { channel });
+export const verifyCode = (channel, code) => api.post("/users/me/verify", { channel, code });
+
 export default api;

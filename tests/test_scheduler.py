@@ -69,16 +69,12 @@ async def subscription_users(db_session):
 
 
 def mock_scheduler_time(mocker):
-    mock_now_utc = datetime.datetime(2025, 1, 1, 4, 0, 0, tzinfo=datetime.timezone.utc)
+    mock_now_utc = datetime.datetime(2025, 1, 1, 4, 0, 0, tzinfo=datetime.UTC)
 
     class MockDatetime(datetime.datetime):
         @classmethod
         def now(cls, tz=None):
-            return (
-                mock_now_utc
-                if tz == datetime.timezone.utc
-                else mock_now_utc.astimezone(tz)
-            )
+            return mock_now_utc if tz == datetime.UTC else mock_now_utc.astimezone(tz)
 
     mocker.patch("app.tasks.scheduler_tasks.datetime", MockDatetime)
 
@@ -92,29 +88,14 @@ async def test_scheduler_correct_timezone(subscription_users, mocker, db_session
         yield db_session
 
     mocker.patch("app.tasks.scheduler_tasks.get_celery_db", test_celery_db)
-    mocker.patch(
-        "app.tasks.scheduler_tasks.client.chat.completions.create",
-        return_value=type(
-            "Completion",
-            (),
-            {
-                "choices": [
-                    type(
-                        "Choice",
-                        (),
-                        {"message": type("Message", (), {"content": "Keep going."})()},
-                    )()
-                ]
-            },
-        )(),
-    )
-    mock_send = mocker.patch(
-        "app.tasks.scheduler_tasks.send_whatsapp_message", return_value=True
+    mock_delay = mocker.patch(
+        "app.tasks.subscription_tasks.process_daily_delivery.delay"
     )
 
     await _process_subscriptions_async()
 
-    mock_send.assert_awaited_once_with("923001234567", "Keep going.")
+    # It should enqueue the task for the Karachi user
+    mock_delay.assert_called_once()
 
 
 async def test_scheduler_does_not_send_same_subscription_twice(
@@ -128,27 +109,12 @@ async def test_scheduler_does_not_send_same_subscription_twice(
         yield db_session
 
     mocker.patch("app.tasks.scheduler_tasks.get_celery_db", test_celery_db)
-    mocker.patch(
-        "app.tasks.scheduler_tasks.client.chat.completions.create",
-        return_value=type(
-            "Completion",
-            (),
-            {
-                "choices": [
-                    type(
-                        "Choice",
-                        (),
-                        {"message": type("Message", (), {"content": "Keep going."})()},
-                    )()
-                ]
-            },
-        )(),
-    )
-    mock_send = mocker.patch(
-        "app.tasks.scheduler_tasks.send_whatsapp_message", return_value=True
+    mock_delay = mocker.patch(
+        "app.tasks.subscription_tasks.process_daily_delivery.delay"
     )
 
     await _process_subscriptions_async()
     await _process_subscriptions_async()
 
-    mock_send.assert_awaited_once()
+    # Still only called once because the second run sees the delivery already exists
+    mock_delay.assert_called_once()

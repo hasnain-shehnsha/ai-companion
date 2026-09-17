@@ -1,7 +1,8 @@
+from sqlalchemy import asc, delete, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import asc, desc, delete
-from app.models.chat import Message, ChatSession
+
+from app.models.chat import ChatSession, Message
 from app.models.reminder import Reminder
 from app.models.subscription import DailySubscription
 

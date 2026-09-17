@@ -1,11 +1,10 @@
+import phonenumbers
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
+from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.schemas.user import UserCreate
-import phonenumbers
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 async def create_user(db: AsyncSession, user_in: UserCreate) -> User:
@@ -21,7 +20,7 @@ async def create_user(db: AsyncSession, user_in: UserCreate) -> User:
     except phonenumbers.NumberParseException:
         raise ValueError("Could not parse WhatsApp number")
 
-    hashed_password = pwd_context.hash(user_in.password)
+    hashed_password = get_password_hash(user_in.password)
 
     user_data = user_in.model_dump(exclude={"password"})
     user_data["whatsapp_number"] = normalized_number
@@ -48,6 +47,6 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
     user = await get_user_by_email(db, email)
     if not user:
         return None
-    if not pwd_context.verify(password, user.hashed_password):
+    if not verify_password(password, user.hashed_password):
         return None
     return user

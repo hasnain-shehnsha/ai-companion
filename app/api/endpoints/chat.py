@@ -1,28 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user, get_optional_current_user
+from app.core.database import get_db
+from app.core.limiter import limiter
+from app.crud.chat_crud import (
+    create_session,
+    delete_chat_message,
+    delete_chat_session,
+    get_session,
+    get_session_messages,
+    get_user_sessions,
+    update_session_title,
+)
+from app.models.user import User
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
-    UserStateResponse,
     ChatSessionResponse,
     MessageResponse,
+    UserStateResponse,
 )
 from app.services.ai_service import handle_chat
 from app.services.llm_service import generate_session_title
-from app.crud.chat_crud import (
-    get_session,
-    update_session_title,
-    get_user_sessions,
-    create_session,
-    get_session_messages,
-    delete_chat_session,
-    delete_chat_message,
-)
 from app.services.memory_service import delete_facts_by_message, delete_facts_by_session
-from app.core.database import get_db
-from app.api.deps import get_current_user, get_optional_current_user
-from app.models.user import User
-from app.core.limiter import limiter
 
 router = APIRouter()
 
@@ -129,8 +130,8 @@ async def delete_session_endpoint(
             status_code=404, detail="Session not found or access denied"
         )
 
-    # Also delete facts tied to this session in Qdrant
-    background_tasks.add_task(delete_facts_by_session, current_user.id, session_id)
+    # Also delete facts tied to this session in Qdrant synchronously to maintain consistency
+    await delete_facts_by_session(current_user.id, session_id)
 
     return {"message": "Session deleted successfully"}
 
@@ -148,7 +149,7 @@ async def delete_message_endpoint(
             status_code=404, detail="Message not found or access denied"
         )
 
-    # Also delete facts tied to this message in Qdrant
-    background_tasks.add_task(delete_facts_by_message, current_user.id, message_id)
+    # Also delete facts tied to this message in Qdrant synchronously
+    await delete_facts_by_message(current_user.id, message_id)
 
     return {"message": "Message deleted successfully"}

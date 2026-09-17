@@ -1,26 +1,30 @@
-import json
-import hmac
 import hashlib
-import phonenumbers
+import hmac
+import json
 import logging
-from sqlalchemy.exc import IntegrityError
+
+import phonenumbers
 from fastapi import (
     APIRouter,
-    Depends,
-    Request,
-    HTTPException,
-    Response,
     BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.database import get_db, AsyncSessionLocal
 from app.core.config import settings
-from app.models.user import User, UserTier
-from app.models.webhook_event import WebhookEvent
+from app.core.database import get_db
+from app.models.user import User
+from app.models.webhook_event import WebhookEvent, WebhookStatus
 from app.services.ai_service import handle_chat
-from app.services.whatsapp_service import send_whatsapp_message, mark_whatsapp_message_read
+from app.services.whatsapp_service import (
+    mark_whatsapp_message_read,
+    send_whatsapp_message,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -58,6 +62,9 @@ async def handle_whatsapp_message(
 
     if settings.META_APP_SECRET:
         signature = request.headers.get("x-hub-signature-256", "")
+        if not signature:
+            raise HTTPException(status_code=403, detail="Missing signature")
+
         if not signature.startswith("sha256="):
             raise HTTPException(status_code=403, detail="Invalid signature format")
 
@@ -68,6 +75,11 @@ async def handle_whatsapp_message(
         if not hmac.compare_digest(f"sha256={expected_signature}", signature):
             logger.warning("Invalid WhatsApp webhook signature received")
             raise HTTPException(status_code=403, detail="Invalid signature")
+    elif settings.ENVIRONMENT == "production":
+        logger.error(
+            "Rejecting webhook in production because META_APP_SECRET is unexpectedly missing!"
+        )
+        raise HTTPException(status_code=500, detail="Configuration Error")
 
     try:
         body = json.loads(body_bytes)
@@ -81,27 +93,58 @@ async def handle_whatsapp_message(
                     for message in messages:
                         msg_id = message.get("id")
 
-                        if msg_id:
-                            event = WebhookEvent(id=msg_id)
-                            db.add(event)
-                            try:
-                                await db.commit()
-                            except IntegrityError:
-                                await db.rollback()
-                                logger.info(
-                                    f"Duplicate WhatsApp message ID {msg_id} ignored."
-                                )
-                                continue
-
                         if message.get("type") == "text":
-                            wa_id = message.get("from")  # Sender's WhatsApp number
-                            text = message.get("text", {}).get("body")
+                            if msg_id:
+                                wa_id = message.get("from")  # Sender's WhatsApp number
+                                text = message.get("text", {}).get("body")
 
-                            # Mark the message as read to turn ticks blue
-                            background_tasks.add_task(mark_whatsapp_message_read, msg_id)
-                            
-                            # Process in the background to avoid Meta webhook timeouts (and retries)
-                            background_tasks.add_task(process_message, wa_id, text)
+                                event = WebhookEvent(
+                                    id=msg_id,
+                                    wa_id=wa_id,
+                                    text=text,
+                                    status=WebhookStatus.RECEIVED,
+                                )
+                                db.add(event)
+                                try:
+                                    await db.commit()
+                                except IntegrityError:
+                                    await db.rollback()
+
+                                    # Handle Meta retries
+                                    stmt = select(WebhookEvent).where(
+                                        WebhookEvent.id == msg_id
+                                    )
+                                    existing_event = (
+                                        await db.execute(stmt)
+                                    ).scalar_one_or_none()
+
+                                    if (
+                                        existing_event
+                                        and existing_event.status
+                                        == WebhookStatus.FAILED
+                                    ):
+                                        logger.info(
+                                            f"Retrying previously failed webhook {msg_id}"
+                                        )
+                                        existing_event.status = WebhookStatus.RECEIVED
+                                        await db.commit()
+                                    else:
+                                        logger.info(
+                                            f"Duplicate WhatsApp message ID {msg_id} ignored."
+                                        )
+                                        continue
+
+                                # Mark the message as read to turn ticks blue
+                                background_tasks.add_task(
+                                    mark_whatsapp_message_read, msg_id
+                                )
+
+                                # Enqueue durable Celery job
+                                from app.tasks.webhook_tasks import (
+                                    process_whatsapp_webhook,
+                                )
+
+                                process_whatsapp_webhook.delay(msg_id)
 
         return {"status": "success"}
     except json.JSONDecodeError as e:
@@ -111,72 +154,76 @@ async def handle_whatsapp_message(
             extra={"error": str(e)},
         )
         raise HTTPException(status_code=400, detail="Invalid JSON format")
-    except Exception as e:
-        logger.exception("Internal error handling WhatsApp webhook")
-        # We must return a 5xx status so Meta registers a failure and retries the webhook.
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-async def process_message(wa_id: str, text: str):
+async def process_message(wa_id: str, text: str, db=None):
     """
     Process the message, retrieve user context, and send AI response.
     """
-    async with AsyncSessionLocal() as db:
+    if db is None:
+        from app.core.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as session:
+            return await process_message(wa_id, text, db=session)
+
+    from sqlalchemy import select
+
+    from app.services.auth_service import check_premium_entitlement
+
+    try:
         try:
-            try:
-                # Meta usually provides wa_id without the leading '+'
-                parsed_wa_id = phonenumbers.parse(f"+{wa_id}")
-                normalized_wa_id = phonenumbers.format_number(
-                    parsed_wa_id, phonenumbers.PhoneNumberFormat.E164
-                )
-            except phonenumbers.NumberParseException:
-                normalized_wa_id = wa_id
-
-            result = await db.execute(
-                select(User).filter(User.whatsapp_number == normalized_wa_id)
+            # Meta usually provides wa_id without the leading '+'
+            parsed_wa_id = phonenumbers.parse(f"+{wa_id}")
+            normalized_wa_id = phonenumbers.format_number(
+                parsed_wa_id, phonenumbers.PhoneNumberFormat.E164
             )
-            user = result.scalar_one_or_none()
+        except phonenumbers.NumberParseException:
+            normalized_wa_id = wa_id
 
-            if not user:
-                fallback_msg = (
-                    "Hello! I am your AI Companion. 🧠\n\n"
-                    "I couldn't find an account associated with this number. "
-                    "Please create a Premium account on our website to start chatting with me here!"
-                )
-                await send_whatsapp_message(wa_id, fallback_msg)
-                return
+        result = await db.execute(
+            select(User).filter(User.whatsapp_number == normalized_wa_id)
+        )
+        user = result.scalar_one_or_none()
 
-            if user.tier != UserTier.PAID:
-                fallback_msg = (
-                    f"Hello {user.first_name}! 🧠\n\n"
-                    "WhatsApp access is a Premium feature. "
-                    "Please upgrade your account on our website to continue our conversation here!"
-                )
-                await send_whatsapp_message(wa_id, fallback_msg)
-                return
+        if not user:
+            fallback_msg = (
+                "Hello! I am your AI Companion. 🧠\n\n"
+                "I couldn't find an account associated with this number. "
+                "Please create a Premium account on our website to start chatting with me here!"
+            )
+            await send_whatsapp_message(wa_id, fallback_msg)
+            return
 
+        if not check_premium_entitlement(user):
+            fallback_msg = (
+                f"Hello {user.first_name}! 🌟\n\n"
+                "Your current plan doesn't include WhatsApp access. "
+                "Please upgrade to Premium on our website to chat with me here!"
+            )
+            await send_whatsapp_message(wa_id, fallback_msg)
+            return
+
+        # Attempt to get AI response
+        try:
             response_data = await handle_chat(db, user, text, channel="whatsapp")
             response_text = response_data.get(
                 "response",
                 "I'm sorry, I ran into a technical issue processing that. Could you please try asking again?",
             )
-
             if not response_text or not response_text.strip():
                 response_text = "I'm sorry, I ran into a technical issue processing that. Could you please try asking again?"
+        except Exception as ai_e:
+            logger.exception(
+                "Error in handle_chat during process_message", extra={"wa_id": wa_id}
+            )
+            response_text = "I'm sorry, I ran into a technical issue processing that. Could you please try asking again?"
 
-            await send_whatsapp_message(wa_id, response_text)
-        except Exception as e:
-            logger.exception("Error in process_message", extra={"wa_id": wa_id})
-            try:
-                import httpx
+        # Attempt to send the response exactly once
+        await send_whatsapp_message(wa_id, response_text)
 
-                await send_whatsapp_message(
-                    wa_id,
-                    "I'm sorry, I ran into a technical issue processing that. Could you please try asking again?",
-                )
-            except httpx.RequestError as inner_e:
-                logger.error(
-                    "Failed to send fallback WhatsApp message",
-                    exc_info=True,
-                    extra={"wa_id": wa_id},
-                )
+    except Exception as e:
+        # If an error happens outside handle_chat (like during send_whatsapp_message or DB lookup)
+        # we just log it. We DO NOT try to send another fallback message because it can lead to duplicate
+        # deliveries if the original message was actually dispatched by Meta before the HTTP timeout.
+        logger.exception("Error in process_message wrapper", extra={"wa_id": wa_id})
+        raise e

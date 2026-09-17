@@ -9,6 +9,7 @@ export default function Register({ onLogin }) {
     last_name: "",
     email: "",
     whatsapp_number: "",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     tier: "PAID",
     password: "",
   });
@@ -24,9 +25,15 @@ export default function Register({ onLogin }) {
       await api.post("/users/", formData);
       const loginResponse = await api.post("/users/login", { email: formData.email, password: formData.password });
       onLogin(loginResponse.data.access_token);
-      navigate("/chat");
+      navigate("/onboarding");
     } catch (err) {
-      setError(err.response?.data?.detail || "Registration failed");
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        // Extract Pydantic validation errors
+        setError(detail.map(d => `${d.loc[d.loc.length - 1]}: ${d.msg}`).join(", "));
+      } else {
+        setError(detail || "Registration failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -96,8 +103,21 @@ export default function Register({ onLogin }) {
               required
               type="tel"
               name="whatsapp_number"
-              placeholder="WhatsApp Number"
+              placeholder="WhatsApp Number (e.g. +92...)"
               value={formData.whatsapp_number}
+              onChange={handleChange}
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl py-3 pl-10 pr-4 outline-none focus:border-[var(--accent-amber)] transition-colors text-[var(--text-primary)]"
+            />
+          </div>
+
+          <div className="relative">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <input
+              required
+              type="text"
+              name="timezone"
+              placeholder="Timezone (e.g. Asia/Karachi)"
+              value={formData.timezone}
               onChange={handleChange}
               className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl py-3 pl-10 pr-4 outline-none focus:border-[var(--accent-amber)] transition-colors text-[var(--text-primary)]"
             />
