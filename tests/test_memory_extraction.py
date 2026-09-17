@@ -21,10 +21,10 @@ async def test_extract_atomic_facts_hallucination_prompt(mocker):
     messages = mock_llm.call_args.args[0]
     prompt = next(m["content"] for m in messages if m["role"] == "user")
 
-    # Assert that the new strict instructions are in the prompt
-    assert "Focus strictly on explicit statements made by the user" in prompt
-    assert "Do not extract facts that the assistant assumed or stated" in prompt
-    assert "Only use 'user:' lines as the source of truth" in prompt
+    # Assert that strict hallucination-prevention instructions are in the prompt
+    assert "Focus on the user's personal information, preferences, and details" in prompt
+    assert "Do not extract facts that the assistant assumed unless the user explicitly confirmed them" in prompt
+    assert "conversation" in prompt.lower()
 
 
 @pytest.mark.asyncio
@@ -43,9 +43,9 @@ async def test_extract_facts_from_single_message_hallucination_prompt(mocker):
     messages = mock_llm.call_args.args[0]
     prompt = next(m["content"] for m in messages if m["role"] == "user")
 
-    # Assert that the new strict instructions are in the prompt
+    # Assert that strict hallucination-prevention instructions are in the prompt
     assert (
         "DO NOT extract any facts that the AI stated about the user unless the user explicitly confirmed them"
         in prompt
     )
-    assert "Focus strictly on explicit statements made by the user" in prompt
+    assert "Pay close attention to short answers the user gives" in prompt

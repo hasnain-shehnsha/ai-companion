@@ -65,7 +65,7 @@ async def test_free_user_daily_subscription_denied(free_user, db_session, mocker
 
     mocker.patch("app.tasks.subscription_tasks.get_celery_db", test_celery_db)
     mock_generate = mocker.patch(
-        "app.tasks.subscription_tasks.client.chat.completions.create"
+        "app.services.llm_gateway.generate_llm_response"
     )
 
     await _process_delivery_async(delivery.id)
