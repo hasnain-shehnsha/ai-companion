@@ -242,30 +242,30 @@ async def handle_chat(
     else:
         if not user.is_onboarding_completed:
             if user.onboarding_state == OnboardingState.WELCOME:
-                messages[0]["content"] += (
-                    f"\n\n[CRITICAL INSTRUCTION: Warmly welcome {user.first_name} and naturally ask where they are from. Keep it conversational.]"
-                )
+                messages[0][
+                    "content"
+                ] += f"\n\n[CRITICAL INSTRUCTION: Warmly welcome {user.first_name} and naturally ask where they are from. Keep it conversational.]"
                 user.onboarding_state = OnboardingState.LOCATION
                 await db.commit()
 
             elif user.onboarding_state == OnboardingState.LOCATION:
-                messages[0]["content"] += (
-                    "\n\n[CRITICAL INSTRUCTION: Acknowledge their location and ask what they do for a living. Only ask one question.]"
-                )
+                messages[0][
+                    "content"
+                ] += "\n\n[CRITICAL INSTRUCTION: Acknowledge their location and ask what they do for a living. Only ask one question.]"
                 user.onboarding_state = OnboardingState.OCCUPATION
                 await db.commit()
 
             elif user.onboarding_state == OnboardingState.OCCUPATION:
-                messages[0]["content"] += (
-                    "\n\n[CRITICAL INSTRUCTION: Acknowledge their occupation and ask about their hobbies or interests. Only ask one question.]"
-                )
+                messages[0][
+                    "content"
+                ] += "\n\n[CRITICAL INSTRUCTION: Acknowledge their occupation and ask about their hobbies or interests. Only ask one question.]"
                 user.onboarding_state = OnboardingState.INTERESTS
                 await db.commit()
 
             elif user.onboarding_state == OnboardingState.INTERESTS:
-                messages[0]["content"] += (
-                    "\n\n[CRITICAL INSTRUCTION: Acknowledge their interests, let them know you're excited to chat, and conclude the onboarding.]"
-                )
+                messages[0][
+                    "content"
+                ] += "\n\n[CRITICAL INSTRUCTION: Acknowledge their interests, let them know you're excited to chat, and conclude the onboarding.]"
                 user.onboarding_state = OnboardingState.COMPLETE
                 await db.commit()
 

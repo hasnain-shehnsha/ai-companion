@@ -48,20 +48,20 @@ def test_fresh_database_migrations():
         ]
 
         for table in required_tables:
-            assert table in tables, (
-                f"Table '{table}' is missing from the database after running migrations!"
-            )
+            assert (
+                table in tables
+            ), f"Table '{table}' is missing from the database after running migrations!"
 
         # Verify indexes and constraints for a critical table like usage_records
         usage_indexes = [idx["name"] for idx in inspector.get_indexes("usage_records")]
-        assert "ix_usage_records_id" in usage_indexes, (
-            "Missing primary index on usage_records"
-        )
+        assert (
+            "ix_usage_records_id" in usage_indexes
+        ), "Missing primary index on usage_records"
 
         usage_fks = inspector.get_foreign_keys("usage_records")
-        assert any(fk["referred_table"] == "users" for fk in usage_fks), (
-            "Missing foreign key to users in usage_records"
-        )
+        assert any(
+            fk["referred_table"] == "users" for fk in usage_fks
+        ), "Missing foreign key to users in usage_records"
 
         # Requirement 1: Application smoke test
         # We can quickly test that the FastApi app can start up and the database connection works
