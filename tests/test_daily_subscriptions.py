@@ -24,7 +24,7 @@ async def test_user_sub(db_session):
         first_name="Sub",
         last_name="Test",
         tier="PAID",
-        whatsapp_number=f"+92{random.randint(3000000000, 3999999999)}",
+        whatsapp_number=f"+92300{random.randint(1000000, 9999999)}",
         whatsapp_verified=True,
         timezone="UTC",
     )
