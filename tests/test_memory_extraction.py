@@ -22,8 +22,13 @@ async def test_extract_atomic_facts_hallucination_prompt(mocker):
     prompt = next(m["content"] for m in messages if m["role"] == "user")
 
     # Assert that strict hallucination-prevention instructions are in the prompt
-    assert "Focus on the user's personal information, preferences, and details" in prompt
-    assert "Do not extract facts that the assistant assumed unless the user explicitly confirmed them" in prompt
+    assert (
+        "Focus on the user's personal information, preferences, and details" in prompt
+    )
+    assert (
+        "Do not extract facts that the assistant assumed unless the user explicitly confirmed them"
+        in prompt
+    )
     assert "conversation" in prompt.lower()
 
 
